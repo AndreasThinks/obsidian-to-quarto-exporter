@@ -19,7 +19,7 @@ This plugin for Obsidian (https://obsidian.md) allows you to export your Obsidia
 1. Open Obsidian Settings > Community Plugins
 2. Disable Safe Mode
 3. Click Browse community plugins
-4. Search for "Obsidian to Quarto Exporter"
+4. Search for "Quarto Exporter"
 5. Click Install
 6. Once installed, close the community plugins window and activate the newly installed plugin
 
