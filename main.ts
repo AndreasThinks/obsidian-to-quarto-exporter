@@ -197,12 +197,12 @@ export default class ObsidianToQuartoPlugin extends Plugin {
     }
 
     async convertEmbeddedNotes(content: string): Promise<string> {
-        const embeddedNoteRegex = /!\[\[([^\]]+)\]\]/g;
+        const embeddedNoteRegex = /!\[\[([^\]]+?)((?:#|\^).+?)?\]\]/g;
         const embedPromises: Promise<string>[] = [];
 
-        content.replace(embeddedNoteRegex, (match, noteName) => {
-            embedPromises.push(this.getEmbeddedNoteContent(noteName));
-            return match; // This is necessary for the replace function, but we're not using its result
+        content.replace(embeddedNoteRegex, (match, noteName, reference) => {
+            embedPromises.push(this.getEmbeddedNoteContent(noteName, reference));
+            return match;
         });
 
         const embeddedContents = await Promise.all(embedPromises);
@@ -210,14 +210,49 @@ export default class ObsidianToQuartoPlugin extends Plugin {
         return content.replace(embeddedNoteRegex, () => embeddedContents.shift() || '');
     }
 
-    async getEmbeddedNoteContent(noteName: string): Promise<string> {
+    async getEmbeddedNoteContent(noteName: string, reference?: string): Promise<string> {
         const file = this.app.metadataCache.getFirstLinkpathDest(noteName, '');
         if (file instanceof TFile) {
-            const content = await this.app.vault.read(file);
-            return `\n\n## Embedded note: ${noteName}\n\n${content}\n\n`;
+            let content = await this.app.vault.read(file);
+
+            if (reference) {
+                if (reference.startsWith('#')) {
+                    // Header reference
+                    const headerName = reference.slice(1);
+                    const headerRegex = new RegExp(`^(#+)\\s*${this.escapeRegExp(headerName)}\\s*$`, 'im');
+                    const headerMatch = content.match(headerRegex);
+                    if (headerMatch) {
+                        const headerLevel = headerMatch[1].length;
+                        const headerIndex = headerMatch.index!;
+                        const nextHeaderRegex = new RegExp(`^#{1,${headerLevel}}\\s`, 'im');
+                        const remainingContent = content.slice(headerIndex + headerMatch[0].length);
+                        const nextHeaderMatch = remainingContent.match(nextHeaderRegex);
+                        const nextHeaderIndex = nextHeaderMatch ? nextHeaderMatch.index! + headerMatch[0].length : content.length;
+                        content = content.slice(headerIndex, headerIndex + nextHeaderIndex);
+                    }
+                } else if (reference.startsWith('^')) {
+                    // Block reference
+                    const blockId = reference.slice(1);
+                    const blockRegex = new RegExp(`(^|\n)([^\n]+\\s*(?:{{[^}]*}})?\\s*\\^${this.escapeRegExp(blockId)}\\s*$)`, 'm');
+                    const blockMatch = content.match(blockRegex);
+                    if (blockMatch) {
+                        const blockIndex = blockMatch.index! + blockMatch[1].length;
+                        const blockEndIndex = content.indexOf('\n\n', blockIndex);
+                        content = blockEndIndex !== -1 
+                            ? content.slice(blockIndex, blockEndIndex).trim()
+                            : content.slice(blockIndex).trim();
+                    }
+                }
+            }
+
+            return `\n\n## Embedded note: ${noteName}${reference || ''}\n\n${content.trim()}\n\n`;
         } else {
-            return `\n\n> [!warning] Embedded note not found: ${noteName}\n\n`;
+            return `\n\n> [!warning] Embedded note not found: ${noteName}${reference || ''}\n\n`;
         }
+    }
+
+    private escapeRegExp(string: string): string {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
     private mapCalloutType(obsidianType: string): string {
