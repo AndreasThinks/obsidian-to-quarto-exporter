@@ -1,8 +1,15 @@
+# Build output
+main.js
+*.js.map
+
+# Compiled styles (if you're using a preprocessor)
+styles.css
+
+# Plugin data
+data.json
+
 # Dependency directories
 node_modules/
-
-# Build output
-*.js.map
 
 # Environment files
 .env
