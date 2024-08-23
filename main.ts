@@ -85,33 +85,55 @@ export default class ObsidianToQuartoPlugin extends Plugin {
         }
     }
 
-    async convertToQuarto(content: string, file: TFile): Promise<string> {
-        let convertedContent = content;
 
-        // Add title and date to frontmatter
+
+    async convertToQuarto(content: string, file: TFile): Promise<string> {
+        // Extract frontmatter if it exists
+        let frontmatter = '';
+        let mainContent = content;
+        const frontmatterMatch = content.match(/^---\n[\s\S]*?\n---\n/);
+        if (frontmatterMatch) {
+            frontmatter = frontmatterMatch[0];
+            mainContent = content.slice(frontmatter.length);
+        }
+
+        // Create new frontmatter
         const title = file.basename;
-        let frontmatter = `---\ntitle: "${title}"\n`;
+        let newFrontmatter = `---\ntitle: "${title}"\n`;
 
         if (this.settings.dateOption !== 'none') {
             const date = await this.getFileDate(file);
-            frontmatter += `date: "${date}"\n`;
+            newFrontmatter += `date: "${date}"\n`;
         }
 
         // Add tags if enabled
         if (this.settings.importTags) {
             const fileTags = this.getFileTags(file);
             if (fileTags.length > 0) {
-                frontmatter += `tags: [${fileTags.map(tag => `"${tag}"`).join(', ')}]\n`;
+                newFrontmatter += `tags:\n${fileTags.map(tag => `  - ${tag}`).join('\n')}\n`;
             }
         }
 
-        frontmatter += '---\n\n';
+        // Merge existing frontmatter (if any) with new frontmatter, excluding tags
+        if (frontmatter) {
+            const existingFrontmatter = frontmatter
+                .slice(4, -4) // Remove '---' delimiters
+                .split('\n')
+                .filter(line => !line.startsWith('tags:') && !line.trim().startsWith('-'))
+                .join('\n');
+            newFrontmatter += existingFrontmatter + '\n';
+        }
+        newFrontmatter += '---\n\n';
 
-        // Replace existing frontmatter or add new frontmatter
-        if (/^---\n/.test(convertedContent)) {
-            convertedContent = convertedContent.replace(/^---\n[\s\S]*?---\n/, frontmatter);
-        } else {
-            convertedContent = frontmatter + convertedContent;
+        // Process main content
+        let convertedContent = mainContent;
+
+        // Preserve content before the first header
+        const firstHeaderIndex = convertedContent.search(/^\s*#/m);
+        let preHeaderContent = '';
+        if (firstHeaderIndex !== -1) {
+            preHeaderContent = convertedContent.slice(0, firstHeaderIndex).trim() + '\n\n';
+            convertedContent = convertedContent.slice(firstHeaderIndex);
         }
 
         convertedContent = await this.convertEmbeddedNotes(convertedContent);
@@ -127,23 +149,25 @@ export default class ObsidianToQuartoPlugin extends Plugin {
                 return `::: {.callout-${quartoType}}\n${title.trim() ? `## ${title.trim()}\n` : ''}${content.replace(/^>/gm, '').trim()}\n:::\n\n`;
             }
         );
-        return convertedContent;
+
+        // Combine all parts
+        return newFrontmatter + preHeaderContent + convertedContent;
     }
 
     getFileTags(file: TFile): string[] {
         const fileCache = this.app.metadataCache.getFileCache(file);
-        const tags: string[] = [];
+        const tags: Set<string> = new Set();
         if (fileCache?.tags) {
-            tags.push(...fileCache.tags.map(t => t.tag.replace('#', '')));
+            fileCache.tags.forEach(t => tags.add(t.tag.replace('#', '')));
         }
         if (fileCache?.frontmatter?.tags) {
             if (Array.isArray(fileCache.frontmatter.tags)) {
-                tags.push(...fileCache.frontmatter.tags);
+                fileCache.frontmatter.tags.forEach(t => tags.add(t));
             } else if (typeof fileCache.frontmatter.tags === 'string') {
-                tags.push(fileCache.frontmatter.tags);
+                tags.add(fileCache.frontmatter.tags);
             }
         }
-        return [...new Set(tags)]; // Remove duplicates
+        return Array.from(tags);
     }
 
     async getFileDate(file: TFile): Promise<string> {
