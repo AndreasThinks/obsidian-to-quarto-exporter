@@ -26,7 +26,7 @@ This plugin for Obsidian (https://obsidian.md) allows you to export your Obsidia
 ### Manual Installation
 
 1. Download `main.js`, `manifest.json`, and `styles.css` (if available) from the latest release in the GitHub repository.
-2. Create a new folder named `obsidian-to-quarto-exporter` in your vault's plugins folder: `<vault>/.obsidian/plugins/`
+2. Create a new folder named `quarto-exporter` in your vault's plugins folder: `<vault>/.obsidian/plugins/`
 3. Move the downloaded files into the `obsidian-to-quarto-exporter` folder.
 4. Reload Obsidian
 5. If prompted about Safe Mode, you can disable safe mode and enable the plugin.
@@ -57,7 +57,7 @@ If you want to contribute to the development of this plugin, follow these steps:
 
 ## Manually installing the plugin
 
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/obsidian-to-quarto-exporter/`.
+- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/quarto-exporter/`.
 
 ## Support
 
