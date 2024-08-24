@@ -214,14 +214,18 @@ export default class ObsidianToQuartoPlugin extends Plugin {
         const file = this.app.metadataCache.getFirstLinkpathDest(noteName, '');
         if (file instanceof TFile) {
             let content = await this.app.vault.read(file);
+            console.log(`Original content length: ${content.length}`);
 
             if (reference) {
+                console.log(`Processing reference: ${reference}`);
                 if (reference.startsWith('#')) {
                     // Header reference
                     const headerName = reference.slice(1);
+                    console.log(`Looking for header: ${headerName}`);
                     const headerRegex = new RegExp(`^(#+)\\s*${this.escapeRegExp(headerName)}\\s*$`, 'im');
                     const headerMatch = content.match(headerRegex);
                     if (headerMatch) {
+                        console.log(`Found header: ${headerMatch[0]}`);
                         const headerLevel = headerMatch[1].length;
                         const headerIndex = headerMatch.index!;
                         const nextHeaderRegex = new RegExp(`^#{1,${headerLevel}}\\s`, 'im');
@@ -229,24 +233,38 @@ export default class ObsidianToQuartoPlugin extends Plugin {
                         const nextHeaderMatch = remainingContent.match(nextHeaderRegex);
                         const nextHeaderIndex = nextHeaderMatch ? nextHeaderMatch.index! + headerMatch[0].length : content.length;
                         content = content.slice(headerIndex, headerIndex + nextHeaderIndex);
+                        console.log(`Extracted content length: ${content.length}`);
+                    } else {
+                        console.log(`Header not found: ${headerName}`);
+                        return `\n\n> [!warning] Header not found: ${headerName} in ${noteName}\n\n`;
                     }
                 } else if (reference.startsWith('^')) {
                     // Block reference
                     const blockId = reference.slice(1);
+                    console.log(`Looking for block: ${blockId}`);
                     const blockRegex = new RegExp(`(^|\n)([^\n]+\\s*(?:{{[^}]*}})?\\s*\\^${this.escapeRegExp(blockId)}\\s*$)`, 'm');
                     const blockMatch = content.match(blockRegex);
                     if (blockMatch) {
+                        console.log(`Found block: ${blockMatch[2]}`);
                         const blockIndex = blockMatch.index! + blockMatch[1].length;
                         const blockEndIndex = content.indexOf('\n\n', blockIndex);
                         content = blockEndIndex !== -1 
                             ? content.slice(blockIndex, blockEndIndex).trim()
                             : content.slice(blockIndex).trim();
+                        console.log(`Extracted content length: ${content.length}`);
+                    } else {
+                        console.log(`Block not found: ${blockId}`);
+                        return `\n\n> [!warning] Block not found: ${blockId} in ${noteName}\n\n`;
                     }
                 }
             }
 
-            return `\n\n## Embedded note: ${noteName}${reference || ''}\n\n${content.trim()}\n\n`;
+            // Remove the block reference if it exists
+            content = content.replace(/\s*\^[a-zA-Z0-9-]+\s*$/, '');
+
+            return `\n\n${content.trim()}\n\n`;
         } else {
+            console.log(`File not found: ${noteName}`);
             return `\n\n> [!warning] Embedded note not found: ${noteName}${reference || ''}\n\n`;
         }
     }
