@@ -1,4 +1,4 @@
-import { App, Plugin, PluginSettingTab, Setting, TFile, Notice, Vault, Workspace, MetadataCache } from 'obsidian';
+import { App, Plugin, PluginSettingTab, Setting, TFile, Notice, getAllTags} from 'obsidian';
 
 interface ObsidianToQuartoSettings {
     dateOption: 'none' | 'created' | 'modified';
@@ -156,18 +156,11 @@ export default class ObsidianToQuartoPlugin extends Plugin {
 
     getFileTags(file: TFile): string[] {
         const fileCache = this.app.metadataCache.getFileCache(file);
-        const tags: Set<string> = new Set();
-        if (fileCache?.tags) {
-            fileCache.tags.forEach(t => tags.add(t.tag.replace('#', '')));
+        if (fileCache) {
+            const tags = getAllTags(fileCache);
+            return tags ? tags.map(tag => tag.replace('#', '')) : [];
         }
-        if (fileCache?.frontmatter?.tags) {
-            if (Array.isArray(fileCache.frontmatter.tags)) {
-                fileCache.frontmatter.tags.forEach(t => tags.add(t));
-            } else if (typeof fileCache.frontmatter.tags === 'string') {
-                tags.add(fileCache.frontmatter.tags);
-            }
-        }
-        return Array.from(tags);
+        return [];
     }
 
     async getFileDate(file: TFile): Promise<string> {
