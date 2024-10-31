@@ -1,7 +1,7 @@
 {
     "id": "quarto-exporter",
     "name": "Quarto Exporter",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "minAppVersion": "0.15.0",
     "description": "Export notes to Quarto-compatible QMD files.",
     "author": "Andreas Varotsis",
