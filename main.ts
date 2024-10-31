@@ -1,4 +1,6 @@
 import { App, Plugin, PluginSettingTab, Setting, TFile, Notice, getAllTags} from 'obsidian';
+import * as path from 'path';
+import * as fs from 'fs';
 
 interface ObsidianToQuartoSettings {
     dateOption: 'none' | 'created' | 'modified';
@@ -6,6 +8,7 @@ interface ObsidianToQuartoSettings {
     outputFolder: string;
     overwriteExisting: boolean;
     importTags: boolean;
+    allowExternalPaths: boolean;
 }
 
 const DEFAULT_SETTINGS: ObsidianToQuartoSettings = {
@@ -13,7 +16,8 @@ const DEFAULT_SETTINGS: ObsidianToQuartoSettings = {
     dateFormat: 'YYYY-MM-DD',
     outputFolder: '',
     overwriteExisting: false,
-    importTags: true
+    importTags: true,
+    allowExternalPaths: false
 }
 
 export default class ObsidianToQuartoPlugin extends Plugin {
@@ -52,33 +56,63 @@ export default class ObsidianToQuartoPlugin extends Plugin {
             const content = await this.app.vault.read(activeFile);
             const convertedContent = await this.convertToQuarto(content, activeFile);
             
-            const outputFolder = this.settings.outputFolder || activeFile.parent.path;
+            let outputPath: string;
             let newFileName = activeFile.basename + '.qmd';
-            let newPath = `${outputFolder}/${newFileName}`;
+            let newPath: string;
 
-            await this.app.vault.adapter.mkdir(outputFolder);
-            
-            // Check if file exists and handle accordingly
-            if (await this.app.vault.adapter.exists(newPath)) {
-                if (this.settings.overwriteExisting) {
-                    await this.app.vault.adapter.remove(newPath);
-                } else {
-                    let counter = 1;
-                    while (await this.app.vault.adapter.exists(newPath)) {
-                        newFileName = `${activeFile.basename}_${counter}.qmd`;
-                        newPath = `${outputFolder}/${newFileName}`;
-                        counter++;
+            if (this.settings.allowExternalPaths && path.isAbsolute(this.settings.outputFolder)) {
+                // Handle absolute path outside vault
+                outputPath = this.settings.outputFolder;
+                try {
+                    fs.mkdirSync(outputPath, { recursive: true });
+                    newPath = path.join(outputPath, newFileName);
+
+                    if (fs.existsSync(newPath)) {
+                        if (this.settings.overwriteExisting) {
+                            fs.unlinkSync(newPath);
+                        } else {
+                            let counter = 1;
+                            while (fs.existsSync(newPath)) {
+                                newFileName = `${activeFile.basename}_${counter}.qmd`;
+                                newPath = path.join(outputPath, newFileName);
+                                counter++;
+                            }
+                        }
+                    }
+
+                    fs.writeFileSync(newPath, convertedContent);
+                    new Notice(`Successfully exported to ${newPath}`);
+                } catch (error) {
+                    console.error('Error writing to external path:', error);
+                    new Notice(`Failed to write to external path: ${error.message}`);
+                    return;
+                }
+            } else {
+                // Handle vault path
+                outputPath = this.settings.outputFolder || activeFile.parent.path;
+                await this.app.vault.adapter.mkdir(outputPath);
+                
+                newPath = `${outputPath}/${newFileName}`;
+                if (await this.app.vault.adapter.exists(newPath)) {
+                    if (this.settings.overwriteExisting) {
+                        await this.app.vault.adapter.remove(newPath);
+                    } else {
+                        let counter = 1;
+                        while (await this.app.vault.adapter.exists(newPath)) {
+                            newFileName = `${activeFile.basename}_${counter}.qmd`;
+                            newPath = `${outputPath}/${newFileName}`;
+                            counter++;
+                        }
                     }
                 }
-            }
 
-            await this.app.vault.create(newPath, convertedContent);
-            
-            const newFile = this.app.vault.getAbstractFileByPath(newPath);
-            if (newFile instanceof TFile) {
-                await this.app.workspace.openLinkText(newFile.path, '', true);
+                await this.app.vault.create(newPath, convertedContent);
+                const newFile = this.app.vault.getAbstractFileByPath(newPath);
+                if (newFile instanceof TFile) {
+                    await this.app.workspace.openLinkText(newFile.path, '', true);
+                }
+                new Notice(`Successfully exported to ${newFileName}`);
             }
-            new Notice(`Successfully exported to ${newFileName}`);
         } catch (error) {
             console.error('Error in exportToQuarto:', error);
             new Notice('Failed to export to Quarto QMD. Check console for details.');
@@ -297,7 +331,6 @@ export default class ObsidianToQuartoPlugin extends Plugin {
     }
 }
 
-
 class ObsidianToQuartoSettingTab extends PluginSettingTab {
     plugin: ObsidianToQuartoPlugin;
 
@@ -310,6 +343,27 @@ class ObsidianToQuartoSettingTab extends PluginSettingTab {
         const {containerEl} = this;
 
         containerEl.empty();
+
+        new Setting(containerEl)
+            .setName('Allow External Paths')
+            .setDesc('If enabled, allows exporting files to locations outside the Obsidian vault using absolute paths')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.allowExternalPaths)
+                .onChange(async (value) => {
+                    this.plugin.settings.allowExternalPaths = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Output Folder')
+            .setDesc('Specify the folder where QMD files should be saved. Use absolute path (e.g., /home/user/exports) to save outside vault, or relative path for inside vault. Leave blank to use same folder as original file.')
+            .addText(text => text
+                .setPlaceholder('Enter folder path')
+                .setValue(this.plugin.settings.outputFolder)
+                .onChange(async (value) => {
+                    this.plugin.settings.outputFolder = value;
+                    await this.plugin.saveSettings();
+                }));
 
         new Setting(containerEl)
             .setName('Date Option')
@@ -332,17 +386,6 @@ class ObsidianToQuartoSettingTab extends PluginSettingTab {
                 .setValue(this.plugin.settings.dateFormat)
                 .onChange(async (value) => {
                     this.plugin.settings.dateFormat = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName('Output Folder')
-            .setDesc('Specify the folder where QMD files should be saved (leave blank to use the same folder as the original file)')
-            .addText(text => text
-                .setPlaceholder('Enter folder path')
-                .setValue(this.plugin.settings.outputFolder)
-                .onChange(async (value) => {
-                    this.plugin.settings.outputFolder = value;
                     await this.plugin.saveSettings();
                 }));
 
