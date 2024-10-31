@@ -85,7 +85,10 @@ export default class ObsidianToQuartoPlugin extends Plugin {
         }
     }
 
-
+    convertObsidianImages(content: string): string {
+        // Convert Obsidian image syntax (![[image.png]]) to standard Markdown (![](<image.png>))
+        return content.replace(/!\[\[([^\]]+?)\]\]/g, '![]($1)');
+    }
 
     async convertToQuarto(content: string, file: TFile): Promise<string> {
         // Extract frontmatter if it exists
@@ -135,6 +138,9 @@ export default class ObsidianToQuartoPlugin extends Plugin {
             preHeaderContent = convertedContent.slice(0, firstHeaderIndex).trim() + '\n\n';
             convertedContent = convertedContent.slice(firstHeaderIndex);
         }
+
+        // Convert Obsidian image syntax before other conversions
+        convertedContent = this.convertObsidianImages(convertedContent);
 
         convertedContent = await this.convertEmbeddedNotes(convertedContent);
 
