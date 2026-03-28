@@ -120,11 +120,22 @@ export default class ObsidianToQuartoPlugin extends Plugin {
     }
 
     convertObsidianImages(content: string): string {
-        // Convert Obsidian image syntax (![[image.png]]) to standard Markdown (![](<image.png>))
-        return content.replace(/!\[\[([^\]]+?)\]\]/g, '![]($1)');
+        // Convert Obsidian image syntax (![[image.png]]) to standard Markdown
+        // Only match files with image/media extensions to avoid mangling embedded notes
+        return content.replace(
+            /!\[\[([^\]]+?\.(?:png|jpe?g|gif|bmp|svg|webp|mp4|webm|ogv|mov|mkv|pdf)(?:\|[^\]]*)?)\]\]/gi,
+            (_, ref) => {
+                // Strip Obsidian size hint (e.g. |400) if present
+                const clean = ref.replace(/\|.*$/, '');
+                return `![](${clean})`;
+            }
+        );
     }
 
     async convertToQuarto(content: string, file: TFile): Promise<string> {
+        // Normalise line endings to \n (handles Windows \r\n)
+        content = content.replace(/\r\n/g, '\n');
+
         // Extract frontmatter if it exists
         let frontmatter = '';
         let mainContent = content;
@@ -153,12 +164,26 @@ export default class ObsidianToQuartoPlugin extends Plugin {
 
         // Merge existing frontmatter (if any) with new frontmatter, excluding tags
         if (frontmatter) {
-            const existingFrontmatter = frontmatter
+            const lines = frontmatter
                 .slice(4, -4) // Remove '---' delimiters
-                .split('\n')
-                .filter(line => !line.startsWith('tags:') && !line.trim().startsWith('-'))
-                .join('\n');
-            newFrontmatter += existingFrontmatter + '\n';
+                .split('\n');
+            const filtered: string[] = [];
+            let inTagsBlock = false;
+            for (const line of lines) {
+                if (/^tags\s*:/.test(line)) {
+                    inTagsBlock = true;
+                    continue;
+                }
+                if (inTagsBlock) {
+                    // Still inside tags block if line is a list item or blank
+                    if (/^\s+-/.test(line) || line.trim() === '') {
+                        continue;
+                    }
+                    inTagsBlock = false;
+                }
+                filtered.push(line);
+            }
+            newFrontmatter += filtered.join('\n') + '\n';
         }
         newFrontmatter += '---\n\n';
 
@@ -187,12 +212,21 @@ export default class ObsidianToQuartoPlugin extends Plugin {
             '$$$\n$1\n$$$'
         );
 
+        // Convert Obsidian wikilinks [[Page Name]] and [[Page Name|Display Text]] to Markdown links
+        convertedContent = convertedContent.replace(
+            /(?<!!)\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g,
+            (_, target, display) => `[${display || target}](${target.replace(/ /g, '%20')})`
+        );
+
         // Convert Obsidian callouts to Quarto callouts
         convertedContent = convertedContent.replace(
-            /> \[!(\w+)\](.*?)\n((?:>.*\n?)*)/g,
+            /> \[!(\w+)\](.*?)(?:\n)((?:>.*(?:\n|$))*)/g,
             (_, type, title, content) => {
                 const quartoType = this.mapCalloutType(type);
-                return `::: {.callout-${quartoType}}\n${title.trim() ? `## ${title.trim()}\n` : ''}${content.replace(/^>/gm, '').trim()}\n:::\n\n`;
+                const cleanContent = content
+                    .replace(/^>\s?/gm, '')
+                    .trim();
+                return `::: {.callout-${quartoType}}\n${title.trim() ? `## ${title.trim()}\n` : ''}${cleanContent}\n:::\n\n`;
             }
         );
 
@@ -329,12 +363,7 @@ export default class ObsidianToQuartoPlugin extends Plugin {
         return typeMap[obsidianType.toLowerCase()] || 'note';
     }
 
-    private slugify(text: string): string {
-        return text
-            .toLowerCase()
-            .replace(/[^\w ]+/g, '')
-            .replace(/ +/g, '-');
-    }
+
 }
 
 class ObsidianToQuartoSettingTab extends PluginSettingTab {
