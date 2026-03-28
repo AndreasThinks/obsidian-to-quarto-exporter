@@ -181,6 +181,12 @@ export default class ObsidianToQuartoPlugin extends Plugin {
         // Add line breaks before headers
         convertedContent = convertedContent.replace(/^(#+\s.*)/gm, '\n$1');
 
+        // Format single-line display math ($$...$$) as multi-line for Quarto
+        convertedContent = convertedContent.replace(
+            /^\$\$([^\n]+?)\$\$\s*$/gm,
+            '$$$\n$1\n$$$'
+        );
+
         // Convert Obsidian callouts to Quarto callouts
         convertedContent = convertedContent.replace(
             /> \[!(\w+)\](.*?)\n((?:>.*\n?)*)/g,
