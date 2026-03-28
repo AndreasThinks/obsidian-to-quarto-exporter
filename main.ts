@@ -212,6 +212,9 @@ export default class ObsidianToQuartoPlugin extends Plugin {
             '$$$\n$1\n$$$'
         );
 
+        // Convert Obsidian highlight syntax ==text== to <mark> tags
+        convertedContent = convertedContent.replace(/==(.*?)==/g, '<mark>$1</mark>');
+
         // Convert Obsidian wikilinks [[Page Name]] and [[Page Name|Display Text]] to Markdown links
         convertedContent = convertedContent.replace(
             /(?<!!)\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g,
