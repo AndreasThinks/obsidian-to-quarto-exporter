@@ -169,20 +169,65 @@ export default class ObsidianToQuartoPlugin extends Plugin {
                 .split('\n');
             const filtered: string[] = [];
             let inTagsBlock = false;
+            let currentListKey = '';
+            let currentListItems: string[] = [];
+
+            const flushList = () => {
+                if (currentListKey) {
+                    // Convert multiline YAML list to inline format for Quarto compatibility
+                    const quoted = currentListItems.map(item => `"${item}"`);
+                    filtered.push(`${currentListKey}: [${quoted.join(', ')}]`);
+                    currentListKey = '';
+                    currentListItems = [];
+                }
+            };
+
             for (const line of lines) {
                 if (/^tags\s*:/.test(line)) {
+                    flushList();
                     inTagsBlock = true;
                     continue;
                 }
                 if (inTagsBlock) {
-                    // Still inside tags block if line is a list item or blank
                     if (/^\s+-/.test(line) || line.trim() === '') {
                         continue;
                     }
                     inTagsBlock = false;
                 }
+
+                // Detect start of a YAML multiline list (key with no inline value)
+                const listKeyMatch = line.match(/^([a-zA-Z][a-zA-Z0-9_-]*)\s*:\s*$/);
+                if (listKeyMatch) {
+                    flushList();
+                    currentListKey = listKeyMatch[1];
+                    continue;
+                }
+
+                // Collect list items if we're inside a multiline list
+                if (currentListKey) {
+                    const itemMatch = line.match(/^\s+-\s*(.+)$/);
+                    if (itemMatch) {
+                        currentListItems.push(itemMatch[1].trim());
+                        continue;
+                    } else if (line.trim() === '') {
+                        continue;
+                    } else {
+                        // Not a list item — flush and continue normally
+                        flushList();
+                    }
+                }
+
+                // Fix single-quoted JSON array values (Obsidian text property type)
+                // e.g. resource-path: '["C:/path"]' → resource-path: ["C:/path"]
+                const quotedArrayMatch = line.match(/^([^:]+):\s*'(\[.*\])'\s*$/);
+                if (quotedArrayMatch) {
+                    filtered.push(`${quotedArrayMatch[1]}: ${quotedArrayMatch[2]}`);
+                    continue;
+                }
+
                 filtered.push(line);
             }
+            flushList();
             newFrontmatter += filtered.join('\n') + '\n';
         }
         newFrontmatter += '---\n\n';
