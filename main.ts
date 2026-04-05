@@ -145,8 +145,15 @@ export default class ObsidianToQuartoPlugin extends Plugin {
             mainContent = content.slice(frontmatter.length);
         }
 
-        // Create new frontmatter
-        const title = file.basename;
+        // Use title from existing frontmatter if present, otherwise fall back to filename
+        let existingTitle: string | null = null;
+        if (frontmatter) {
+            const titleMatch = frontmatter.match(/^title:\s*["']?(.+?)["']?\s*$/m);
+            if (titleMatch) {
+                existingTitle = titleMatch[1].trim();
+            }
+        }
+        const title = existingTitle ?? file.basename;
         let newFrontmatter = `---\ntitle: "${title}"\n`;
 
         if (this.settings.dateOption !== 'none') {
@@ -183,6 +190,10 @@ export default class ObsidianToQuartoPlugin extends Plugin {
             };
 
             for (const line of lines) {
+                // Skip title — already written at the top of newFrontmatter
+                if (/^title\s*:/.test(line)) {
+                    continue;
+                }
                 if (/^tags\s*:/.test(line)) {
                     flushList();
                     inTagsBlock = true;
