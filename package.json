@@ -1,6 +1,6 @@
 {
   "name": "obsidian-to-quarto-exporter",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Export Obsidian notes to Quarto-compatible QMD files.",
   "main": "main.js",
   "scripts": {
