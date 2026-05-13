@@ -374,7 +374,7 @@ export default class ObsidianToQuartoPlugin extends Plugin {
                 } else if (reference.startsWith('^')) {
                     // Block reference
                     const blockId = reference.slice(1);
-                    const blockRegex = new RegExp(`(^|\n)([^\n]+\\s*(?:{{[^}]*}})?\\s*\\^${this.escapeRegExp(blockId)}\\s*$)`, 'm');
+                    const blockRegex = new RegExp(`(^|\n).*\s+\^${this.escapeRegExp(blockId)}\s*$`, 'm');
                     const blockMatch = content.match(blockRegex);
                     if (blockMatch) {
                         const blockIndex = blockMatch.index! + blockMatch[1].length;
