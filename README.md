@@ -10,7 +10,16 @@ This plugin for Obsidian (https://obsidian.md) allows you to export your Obsidia
 - Option to include or exclude tags from Obsidian notes
 - Specify output folder for exported files
 - Choose to overwrite existing files or create new ones
-- Converts Obsidian-specific syntax to Quarto-compatible format
+- Converts Obsidian-specific syntax to Quarto-compatible format:
+  - Wikilinks (`[[Page]]`, `[[Page|Display]]`) → Markdown links
+  - Embedded notes (`![[Note]]`, with header `#` and block `^` references)
+  - Images (`![[photo.png|200]]`) → Markdown image syntax
+  - Mermaid diagrams (````mermaid` → ````{mermaid}`)
+  - Block anchors (`^id`) → pandoc-crossref labels (`{#fig:|tbl:|lst:id}`)
+  - Cross-references (`[#^id]`, `[#^id](#^id)`, `[text](#^id)`) → pandoc-crossref (`@fig:|tbl:|lst:id`)
+  - Callouts (`> [!note]`) → Quarto callouts (`::: {.callout-note}`)
+  - Highlight syntax (`==text==`) → `<mark>` tags
+  - Display math (`$$...$$` on single line) → multi-line Quarto format
 
 ## Installation
 
@@ -25,13 +34,10 @@ This plugin for Obsidian (https://obsidian.md) allows you to export your Obsidia
 
 ### Manual Installation
 
-1. Download `main.js`, `manifest.json`, and `styles.css` (if available) from the latest release in the GitHub repository.
-2. Create a new folder named `quarto-exporter` in your vault's plugins folder: `<vault>/.obsidian/plugins/`
-3. Move the downloaded files into the `obsidian-to-quarto-exporter` folder.
-4. Reload Obsidian
-5. If prompted about Safe Mode, you can disable safe mode and enable the plugin.
-   Otherwise, head to Settings, third-party plugins, make sure safe mode is off and
-   enable the plugin from there.
+1. Download `main.js` and `manifest.json` from the latest release on GitHub.
+2. Create a folder named `quarto-exporter` in your vault: `<vault>/.obsidian/plugins/quarto-exporter/`
+3. Copy `main.js` and `manifest.json` into that folder.
+4. Reload Obsidian and enable the plugin in Settings > Community Plugins.
 
 ## Usage
 
@@ -54,10 +60,6 @@ If you want to contribute to the development of this plugin, follow these steps:
 1. Clone this repository.
 2. Run `npm i` to install dependencies.
 3. Run `npm run dev` to start compilation in watch mode.
-
-## Manually installing the plugin
-
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/quarto-exporter/`.
 
 ## Support
 
