@@ -57,8 +57,11 @@ export default class ObsidianToQuartoPlugin extends Plugin {
             let newPath: string;
 
             if (this.settings.allowExternalPaths && Platform.isDesktop) {
-                const path = await import('path');  // eslint-disable-line no-var-requires, @typescript-eslint/no-require-imports
-                const fs = await import('fs');  // eslint-disable-line no-var-requires, @typescript-eslint/no-require-imports
+                // dynamic import: path is only used for resolve/isAbsolute on desktop
+                // eslint-disable-next-line @typescript-eslint/no-require-imports -- path/fs are platform-guarded by Platform.isDesktop
+                const path = await import('path');
+                // eslint-disable-next-line @typescript-eslint/no-require-imports -- path/fs are platform-guarded by Platform.isDesktop
+                const fs = await import('fs');
                 const resolvedPath = path.resolve(this.settings.outputFolder);
                 if (!path.isAbsolute(resolvedPath)) {
                     new Notice('Output folder must be an absolute path for external exports');
@@ -386,7 +389,7 @@ export default class ObsidianToQuartoPlugin extends Plugin {
                 } else if (reference.startsWith('^')) {
                     // Block reference
                     const blockId = reference.slice(1);
-                    const blockRegex = new RegExp(`(^|\n).*\s+\^${this.escapeRegExp(blockId)}\s*$`, 'm');
+                    const blockRegex = new RegExp('(^|\\n).*\\s+\\^' + this.escapeRegExp(blockId) + '\\s*$', 'm');
                     const blockMatch = content.match(blockRegex);
                     if (blockMatch) {
                         const blockIndex = blockMatch.index! + blockMatch[1].length;
