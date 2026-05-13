@@ -330,16 +330,20 @@ export default class ObsidianToQuartoPlugin extends Plugin {
 
     async convertEmbeddedNotes(content: string): Promise<string> {
         const embeddedNoteRegex = /!\[\[([^\]]+?)((?:#|\^).+?)?\]\]/g;
-        const embedPromises: Promise<string>[] = [];
+        const matches = Array.from(content.matchAll(embeddedNoteRegex));
+        if (matches.length === 0) return content;
 
-        content.replace(embeddedNoteRegex, (match, noteName, reference) => {
-            embedPromises.push(this.getEmbeddedNoteContent(noteName, reference));
-            return match;
-        });
+        const replacements = await Promise.all(
+            matches.map(m => this.getEmbeddedNoteContent(m[1], m[2]))
+        );
 
-        const embeddedContents = await Promise.all(embedPromises);
-
-        return content.replace(embeddedNoteRegex, () => embeddedContents.shift() || '');
+        // Replace matches from end to start so earlier positions stay valid
+        let result = content;
+        for (let i = matches.length - 1; i >= 0; i--) {
+            const m = matches[i];
+            result = result.slice(0, m.index) + replacements[i] + result.slice(m.index! + m[0].length);
+        }
+        return result;
     }
 
     async getEmbeddedNoteContent(noteName: string, reference?: string): Promise<string> {
