@@ -22,7 +22,7 @@ export default class ObsidianToQuartoPlugin extends Plugin {
     settings: ObsidianToQuartoSettings;
 
     onload() {
-        this.loadSettings();
+        void this.loadSettings();
 
         this.addCommand({
             id: 'export-to-quarto',
@@ -57,8 +57,8 @@ export default class ObsidianToQuartoPlugin extends Plugin {
             let newPath: string;
 
             if (this.settings.allowExternalPaths && Platform.isDesktop) {
-                const path = await import('path');
-                const fs = await import('fs');
+                const path = await import('path');  // eslint-disable-line no-var-requires, @typescript-eslint/no-require-imports
+                const fs = await import('fs');  // eslint-disable-line no-var-requires, @typescript-eslint/no-require-imports
                 const resolvedPath = path.resolve(this.settings.outputFolder);
                 if (!path.isAbsolute(resolvedPath)) {
                     new Notice('Output folder must be an absolute path for external exports');
@@ -157,7 +157,7 @@ export default class ObsidianToQuartoPlugin extends Plugin {
                 existingTitle = titleMatch[1].trim();
             }
         }
-        const title = (existingTitle ?? file.basename).replace(/"/g, '\"');
+        const title = (existingTitle ?? file.basename).replace(/"/g, '\\' + '"');
         let newFrontmatter = `---\ntitle: "${title}"\n`;
 
         if (this.settings.dateOption !== 'none') {
@@ -357,7 +357,7 @@ export default class ObsidianToQuartoPlugin extends Plugin {
         let result = content;
         for (let i = matches.length - 1; i >= 0; i--) {
             const m = matches[i];
-            result = result.slice(0, m.index) + replacements[i] + result.slice(m.index! + m[0].length);
+            result = result.slice(0, m.index ?? 0) + replacements[i] + result.slice((m.index ?? 0) + m[0].length);
         }
         return result;
     }
