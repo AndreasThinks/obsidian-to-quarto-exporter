@@ -1,6 +1,4 @@
-import { App, Plugin, PluginSettingTab, Setting, TFile, Notice, getAllTags} from 'obsidian';
-import * as path from 'path';
-import * as fs from 'fs';
+import { App, Plugin, PluginSettingTab, Setting, TFile, Notice, getAllTags, Platform} from 'obsidian';
 
 interface ObsidianToQuartoSettings {
     dateOption: 'none' | 'created' | 'modified';
@@ -23,9 +21,8 @@ const DEFAULT_SETTINGS: ObsidianToQuartoSettings = {
 export default class ObsidianToQuartoPlugin extends Plugin {
     settings: ObsidianToQuartoSettings;
 
-    async onload() {
-        console.log('Loading ObsidianToQuartoPlugin');
-        await this.loadSettings();
+    onload() {
+        this.loadSettings();
 
         this.addCommand({
             id: 'export-to-quarto',
@@ -34,7 +31,6 @@ export default class ObsidianToQuartoPlugin extends Plugin {
         });
 
         this.addSettingTab(new ObsidianToQuartoSettingTab(this.app, this));
-        console.log('ObsidianToQuartoPlugin loaded');
     }
 
     async loadSettings() {
@@ -60,9 +56,17 @@ export default class ObsidianToQuartoPlugin extends Plugin {
             let newFileName = activeFile.basename + '.qmd';
             let newPath: string;
 
-            if (this.settings.allowExternalPaths && path.isAbsolute(this.settings.outputFolder)) {
+            if (this.settings.allowExternalPaths && Platform.isDesktop) {
+                const path = await import('path');
+                const fs = await import('fs');
+                const resolvedPath = path.resolve(this.settings.outputFolder);
+                if (!path.isAbsolute(resolvedPath)) {
+                    new Notice('Output folder must be an absolute path for external exports');
+                    return;
+                }
+
                 // Handle absolute path outside vault
-                outputPath = this.settings.outputFolder;
+                outputPath = resolvedPath;
                 try {
                     fs.mkdirSync(outputPath, { recursive: true });
                     newPath = path.join(outputPath, newFileName);
@@ -153,7 +157,7 @@ export default class ObsidianToQuartoPlugin extends Plugin {
                 existingTitle = titleMatch[1].trim();
             }
         }
-        const title = existingTitle ?? file.basename;
+        const title = (existingTitle ?? file.basename).replace(/"/g, '\"');
         let newFrontmatter = `---\ntitle: "${title}"\n`;
 
         if (this.settings.dateOption !== 'none') {
@@ -257,7 +261,19 @@ export default class ObsidianToQuartoPlugin extends Plugin {
         // Convert Obsidian image syntax before other conversions
         convertedContent = this.convertObsidianImages(convertedContent);
 
+        // Convert Obsidian mermaid code fences to Quarto format
+        // ```mermaid → ```{mermaid}
+        convertedContent = convertedContent.replace(
+            /^```mermaid\s*$/gm,
+            '```{mermaid}'
+        );
+
         convertedContent = await this.convertEmbeddedNotes(convertedContent);
+
+        // Convert Obsidian block references to pandoc-crossref format
+        const { content: blockRefContent, idMap } = this.convertBlockReferences(convertedContent);
+        convertedContent = blockRefContent;
+        convertedContent = this.convertBlockCrossrefs(convertedContent, idMap);
 
         // Add line breaks before headers
         convertedContent = convertedContent.replace(/^(#+\s.*)/gm, '\n$1');
@@ -330,34 +346,33 @@ export default class ObsidianToQuartoPlugin extends Plugin {
 
     async convertEmbeddedNotes(content: string): Promise<string> {
         const embeddedNoteRegex = /!\[\[([^\]]+?)((?:#|\^).+?)?\]\]/g;
-        const embedPromises: Promise<string>[] = [];
+        const matches = Array.from(content.matchAll(embeddedNoteRegex));
+        if (matches.length === 0) return content;
 
-        content.replace(embeddedNoteRegex, (match, noteName, reference) => {
-            embedPromises.push(this.getEmbeddedNoteContent(noteName, reference));
-            return match;
-        });
+        const replacements = await Promise.all(
+            matches.map(m => this.getEmbeddedNoteContent(m[1], m[2]))
+        );
 
-        const embeddedContents = await Promise.all(embedPromises);
-
-        return content.replace(embeddedNoteRegex, () => embeddedContents.shift() || '');
+        // Replace matches from end to start so earlier positions stay valid
+        let result = content;
+        for (let i = matches.length - 1; i >= 0; i--) {
+            const m = matches[i];
+            result = result.slice(0, m.index) + replacements[i] + result.slice(m.index! + m[0].length);
+        }
+        return result;
     }
 
     async getEmbeddedNoteContent(noteName: string, reference?: string): Promise<string> {
         const file = this.app.metadataCache.getFirstLinkpathDest(noteName, '');
         if (file instanceof TFile) {
             let content = await this.app.vault.read(file);
-            console.log(`Original content length: ${content.length}`);
-
             if (reference) {
-                console.log(`Processing reference: ${reference}`);
                 if (reference.startsWith('#')) {
                     // Header reference
                     const headerName = reference.slice(1);
-                    console.log(`Looking for header: ${headerName}`);
                     const headerRegex = new RegExp(`^(#+)\\s*${this.escapeRegExp(headerName)}\\s*$`, 'im');
                     const headerMatch = content.match(headerRegex);
                     if (headerMatch) {
-                        console.log(`Found header: ${headerMatch[0]}`);
                         const headerLevel = headerMatch[1].length;
                         const headerIndex = headerMatch.index!;
                         const nextHeaderRegex = new RegExp(`^#{1,${headerLevel}}\\s`, 'im');
@@ -365,27 +380,21 @@ export default class ObsidianToQuartoPlugin extends Plugin {
                         const nextHeaderMatch = remainingContent.match(nextHeaderRegex);
                         const nextHeaderIndex = nextHeaderMatch ? nextHeaderMatch.index! + headerMatch[0].length : content.length;
                         content = content.slice(headerIndex, headerIndex + nextHeaderIndex);
-                        console.log(`Extracted content length: ${content.length}`);
                     } else {
-                        console.log(`Header not found: ${headerName}`);
                         return `\n\n> [!warning] Header not found: ${headerName} in ${noteName}\n\n`;
                     }
                 } else if (reference.startsWith('^')) {
                     // Block reference
                     const blockId = reference.slice(1);
-                    console.log(`Looking for block: ${blockId}`);
-                    const blockRegex = new RegExp(`(^|\n)([^\n]+\\s*(?:{{[^}]*}})?\\s*\\^${this.escapeRegExp(blockId)}\\s*$)`, 'm');
+                    const blockRegex = new RegExp(`(^|\n).*\s+\^${this.escapeRegExp(blockId)}\s*$`, 'm');
                     const blockMatch = content.match(blockRegex);
                     if (blockMatch) {
-                        console.log(`Found block: ${blockMatch[2]}`);
                         const blockIndex = blockMatch.index! + blockMatch[1].length;
                         const blockEndIndex = content.indexOf('\n\n', blockIndex);
                         content = blockEndIndex !== -1 
                             ? content.slice(blockIndex, blockEndIndex).trim()
                             : content.slice(blockIndex).trim();
-                        console.log(`Extracted content length: ${content.length}`);
                     } else {
-                        console.log(`Block not found: ${blockId}`);
                         return `\n\n> [!warning] Block not found: ${blockId} in ${noteName}\n\n`;
                     }
                 }
@@ -396,9 +405,80 @@ export default class ObsidianToQuartoPlugin extends Plugin {
 
             return `\n\n${content.trim()}\n\n`;
         } else {
-            console.log(`File not found: ${noteName}`);
             return `\n\n> [!warning] Embedded note not found: ${noteName}${reference || ''}\n\n`;
         }
+    }
+
+
+    convertBlockReferences(content: string): { content: string; idMap: Map<string, string> } {
+        const idMap = new Map<string, string>();
+        const lines = content.split('\n');
+        const result: string[] = [];
+
+        for (const line of lines) {
+            const match = line.match(/^(.*?)(?:\{\{[^}]*\}\})?\s*\^([a-zA-Z0-9-]+)\s*$/);
+            if (!match) {
+                result.push(line);
+                continue;
+            }
+
+            const prefix = match[1].trim();
+            const blockId = match[2];
+            let prefixKey: string;
+
+            // Classify by what precedes the block anchor
+            if (/^!?\[[^\]]*\]\(/.test(prefix) || /!\[\[.+?\.(?:png|jpe?g|gif|svg|bmp|webp)\]/i.test(prefix)) {
+                prefixKey = `fig:${blockId}`;
+            } else if (/^\|/.test(prefix)) {
+                // Check if previous line is also a table row (multi-line table)
+                prefixKey = `tbl:${blockId}`;
+            } else {
+                prefixKey = `lst:${blockId}`;
+            }
+
+            idMap.set(blockId, prefixKey);
+
+            // Replace ^id with {#prefix:id}, preserving trailing space
+            result.push(line.replace(/\^[a-zA-Z0-9-]+\s*$/, `{#${prefixKey}}`));
+        }
+
+        return { content: result.join('\n'), idMap };
+    }
+
+    convertBlockCrossrefs(content: string, idMap: Map<string, string>): string {
+        // Apply patterns in order of specificity:
+
+        // 1. Obsidian wikilink crossref: [#^id](#^id) → @prefix:id
+        content = content.replace(
+            /\[#\^([a-zA-Z0-9-]+)\]\(#\^\1\)/g,
+            (_, blockId) => `@${idMap.get(blockId) ?? `sec:${blockId}`}`
+        );
+
+        // 2. Double-bracket wikilink: [[#^id]] → @prefix:id
+        content = content.replace(
+            /\[\[#\^([a-zA-Z0-9-]+)\]\]/g,
+            (_, blockId) => `@${idMap.get(blockId) ?? `sec:${blockId}`}`
+        );
+
+        // 3. Markdown link to block: [text](#^id) → [text](@prefix:id)
+        content = content.replace(
+            /\[([^\]]*)\]\(#\^([a-zA-Z0-9-]+)\)/g,
+            (_, text, blockId) => `[${text}](@${idMap.get(blockId) ?? `sec:${blockId}`})`
+        );
+
+        // 4. Markdown link ref style: [text][#^id] → [text](@prefix:id)
+        content = content.replace(
+            /\[([^\]]*)\]\[#\^([a-zA-Z0-9-]+)\]/g,
+            (_, text, blockId) => `[${text}](@${idMap.get(blockId) ?? `sec:${blockId}`})`
+        );
+
+        // 5. Standalone wikilink reference: [#^id] → @prefix:id
+        content = content.replace(
+            /\[#\^([a-zA-Z0-9-]+)\]/g,
+            (_, blockId) => `@${idMap.get(blockId) ?? `sec:${blockId}`}`
+        );
+
+        return content;
     }
 
     private escapeRegExp(string: string): string {
