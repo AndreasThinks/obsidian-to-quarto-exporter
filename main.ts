@@ -261,6 +261,13 @@ export default class ObsidianToQuartoPlugin extends Plugin {
         // Convert Obsidian image syntax before other conversions
         convertedContent = this.convertObsidianImages(convertedContent);
 
+        // Convert Obsidian mermaid code fences to Quarto format
+        // ```mermaid → ```{mermaid}
+        convertedContent = convertedContent.replace(
+            /^```mermaid\s*$/gm,
+            '```{mermaid}'
+        );
+
         convertedContent = await this.convertEmbeddedNotes(convertedContent);
 
         // Add line breaks before headers
