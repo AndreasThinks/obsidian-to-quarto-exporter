@@ -153,7 +153,7 @@ export default class ObsidianToQuartoPlugin extends Plugin {
                 existingTitle = titleMatch[1].trim();
             }
         }
-        const title = existingTitle ?? file.basename;
+        const title = (existingTitle ?? file.basename).replace(/"/g, '\"');
         let newFrontmatter = `---\ntitle: "${title}"\n`;
 
         if (this.settings.dateOption !== 'none') {
