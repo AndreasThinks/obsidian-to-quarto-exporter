@@ -270,6 +270,11 @@ export default class ObsidianToQuartoPlugin extends Plugin {
 
         convertedContent = await this.convertEmbeddedNotes(convertedContent);
 
+        // Convert Obsidian block references to pandoc-crossref format
+        const { content: blockRefContent, idMap } = this.convertBlockReferences(convertedContent);
+        convertedContent = blockRefContent;
+        convertedContent = this.convertBlockCrossrefs(convertedContent, idMap);
+
         // Add line breaks before headers
         convertedContent = convertedContent.replace(/^(#+\s.*)/gm, '\n$1');
 
@@ -402,6 +407,78 @@ export default class ObsidianToQuartoPlugin extends Plugin {
         } else {
             return `\n\n> [!warning] Embedded note not found: ${noteName}${reference || ''}\n\n`;
         }
+    }
+
+
+    convertBlockReferences(content: string): { content: string; idMap: Map<string, string> } {
+        const idMap = new Map<string, string>();
+        const lines = content.split('\n');
+        const result: string[] = [];
+
+        for (const line of lines) {
+            const match = line.match(/^(.*?)(?:\{\{[^}]*\}\})?\s*\^([a-zA-Z0-9-]+)\s*$/);
+            if (!match) {
+                result.push(line);
+                continue;
+            }
+
+            const prefix = match[1].trim();
+            const blockId = match[2];
+            let prefixKey: string;
+
+            // Classify by what precedes the block anchor
+            if (/^!?\[[^\]]*\]\(/.test(prefix) || /!\[\[.+?\.(?:png|jpe?g|gif|svg|bmp|webp)\]/i.test(prefix)) {
+                prefixKey = `fig:${blockId}`;
+            } else if (/^\|/.test(prefix)) {
+                // Check if previous line is also a table row (multi-line table)
+                prefixKey = `tbl:${blockId}`;
+            } else {
+                prefixKey = `lst:${blockId}`;
+            }
+
+            idMap.set(blockId, prefixKey);
+
+            // Replace ^id with {#prefix:id}, preserving trailing space
+            result.push(line.replace(/\^[a-zA-Z0-9-]+\s*$/, `{#${prefixKey}}`));
+        }
+
+        return { content: result.join('\n'), idMap };
+    }
+
+    convertBlockCrossrefs(content: string, idMap: Map<string, string>): string {
+        // Apply patterns in order of specificity:
+
+        // 1. Obsidian wikilink crossref: [#^id](#^id) → @prefix:id
+        content = content.replace(
+            /\[#\^([a-zA-Z0-9-]+)\]\(#\^\1\)/g,
+            (_, blockId) => `@${idMap.get(blockId) ?? `sec:${blockId}`}`
+        );
+
+        // 2. Double-bracket wikilink: [[#^id]] → @prefix:id
+        content = content.replace(
+            /\[\[#\^([a-zA-Z0-9-]+)\]\]/g,
+            (_, blockId) => `@${idMap.get(blockId) ?? `sec:${blockId}`}`
+        );
+
+        // 3. Markdown link to block: [text](#^id) → [text](@prefix:id)
+        content = content.replace(
+            /\[([^\]]*)\]\(#\^([a-zA-Z0-9-]+)\)/g,
+            (_, text, blockId) => `[${text}](@${idMap.get(blockId) ?? `sec:${blockId}`})`
+        );
+
+        // 4. Markdown link ref style: [text][#^id] → [text](@prefix:id)
+        content = content.replace(
+            /\[([^\]]*)\]\[#\^([a-zA-Z0-9-]+)\]/g,
+            (_, text, blockId) => `[${text}](@${idMap.get(blockId) ?? `sec:${blockId}`})`
+        );
+
+        // 5. Standalone wikilink reference: [#^id] → @prefix:id
+        content = content.replace(
+            /\[#\^([a-zA-Z0-9-]+)\]/g,
+            (_, blockId) => `@${idMap.get(blockId) ?? `sec:${blockId}`}`
+        );
+
+        return content;
     }
 
     private escapeRegExp(string: string): string {
