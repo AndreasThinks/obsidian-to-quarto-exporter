@@ -23,9 +23,8 @@ const DEFAULT_SETTINGS: ObsidianToQuartoSettings = {
 export default class ObsidianToQuartoPlugin extends Plugin {
     settings: ObsidianToQuartoSettings;
 
-    async onload() {
-        console.log('Loading ObsidianToQuartoPlugin');
-        await this.loadSettings();
+    onload() {
+        this.loadSettings();
 
         this.addCommand({
             id: 'export-to-quarto',
@@ -34,7 +33,6 @@ export default class ObsidianToQuartoPlugin extends Plugin {
         });
 
         this.addSettingTab(new ObsidianToQuartoSettingTab(this.app, this));
-        console.log('ObsidianToQuartoPlugin loaded');
     }
 
     async loadSettings() {
