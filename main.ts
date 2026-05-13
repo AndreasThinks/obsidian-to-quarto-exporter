@@ -57,11 +57,10 @@ export default class ObsidianToQuartoPlugin extends Plugin {
             let newPath: string;
 
             if (this.settings.allowExternalPaths && Platform.isDesktop) {
-                // dynamic import: path is only used for resolve/isAbsolute on desktop
-                // eslint-disable-next-line @typescript-eslint/no-require-imports -- path/fs are platform-guarded by Platform.isDesktop
-                const path = await import('path');
-                // eslint-disable-next-line @typescript-eslint/no-require-imports -- path/fs are platform-guarded by Platform.isDesktop
-                const fs = await import('fs');
+                // eslint-disable-next-line @typescript-eslint/no-var-requires -- path is only used for resolve/isAbsolute on desktop
+                const path = require('path');
+                // eslint-disable-next-line @typescript-eslint/no-var-requires -- fs is only used for file writing on desktop
+                const fs = require('fs');
                 const resolvedPath = path.resolve(this.settings.outputFolder);
                 if (!path.isAbsolute(resolvedPath)) {
                     new Notice('Output folder must be an absolute path for external exports');
