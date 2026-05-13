@@ -1,6 +1,4 @@
-import { App, Plugin, PluginSettingTab, Setting, TFile, Notice, getAllTags} from 'obsidian';
-import * as path from 'path';
-import * as fs from 'fs';
+import { App, Plugin, PluginSettingTab, Setting, TFile, Notice, getAllTags, Platform} from 'obsidian';
 
 interface ObsidianToQuartoSettings {
     dateOption: 'none' | 'created' | 'modified';
@@ -58,9 +56,17 @@ export default class ObsidianToQuartoPlugin extends Plugin {
             let newFileName = activeFile.basename + '.qmd';
             let newPath: string;
 
-            if (this.settings.allowExternalPaths && path.isAbsolute(this.settings.outputFolder)) {
+            if (this.settings.allowExternalPaths && Platform.isDesktop) {
+                const path = await import('path');
+                const fs = await import('fs');
+                const resolvedPath = path.resolve(this.settings.outputFolder);
+                if (!path.isAbsolute(resolvedPath)) {
+                    new Notice('Output folder must be an absolute path for external exports');
+                    return;
+                }
+
                 // Handle absolute path outside vault
-                outputPath = this.settings.outputFolder;
+                outputPath = resolvedPath;
                 try {
                     fs.mkdirSync(outputPath, { recursive: true });
                     newPath = path.join(outputPath, newFileName);
